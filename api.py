@@ -1,43 +1,91 @@
 from flask import Flask, request, jsonify
 import json
+import requests
 
 app = Flask(__name__)
 
-# Charger base étudiants
+# Charger les étudiants
 with open("students_prepo_25_26.json", "r", encoding="utf-8") as f:
     students = json.load(f)
 
-
-def calculate_average(notes):
-    return round(sum(notes.values()) / len(notes), 2)
-
+# ==============================
+# ROUTE API ÉTUDIANT
+# ==============================
 
 @app.route("/student/<matricule>", methods=["GET"])
 def get_student(matricule):
-    if matricule not in students:
+    student = students.get(matricule)
+
+    if student:
+        return jsonify(student)
+    else:
         return jsonify({"error": "Matricule introuvable"}), 404
 
-    student = students[matricule]
 
-    if "notes" not in student:
-        student["notes"] = {
-            "S1": {"Math": 12, "Physique": 14, "Info": 15},
-            "S2": {"Math": 13, "Physique": 15, "Info": 16}
-        }
+# ==============================
+# CONFIG WHATSAPP
+# ==============================
 
-    s1_avg = calculate_average(student["notes"]["S1"])
-    s2_avg = calculate_average(student["notes"]["S2"])
-    general = round((s1_avg + s2_avg) / 2, 2)
+VERIFY_TOKEN = "opt_solution_verify"
+WHATSAPP_TOKEN = "EAAZBQLlJeoQkBQzjJy5xbJQiPGccmt1qfQbTa1YuZCVvx9doGIWNJ1ryiOkyDMs3cV19vuqRoBgS0531Furkpp7SpXBf1MR5z2snjcNYxfOH5GmfdkPpmSZC95V83de2OOuoy9UbikutpH2jPDj6OV3qioi4ClunJ8RvtNefVq2aRYZArXfOUSZCL2KlrfQ49avjmnErgtkVteQvwZAd0d0EnkfdN2NfQPMHkJVVvlOifmQJSPBiP61AZDZD"
+PHONE_NUMBER_ID = "102211524431"
+BASE_URL = "https://https://optsolutionesu-api.onrender.com"
 
-    return jsonify({
-        "nom": student["nom"],
-        "sexe": student["sexe"],
-        "S1": student["notes"]["S1"],
-        "S2": student["notes"]["S2"],
-        "moyenne_S1": s1_avg,
-        "moyenne_S2": s2_avg,
-        "moyenne_generale": general
-    })
+# Vérification webhook
+@app.route("/webhook", methods=["GET"])
+def verify():
+    mode = request.args.get("hub.mode")
+    token = request.args.get("hub.verify_token")
+    challenge = request.args.get("hub.challenge")
+
+    if mode and token:
+        if mode == "subscribe" and token == VERIFY_TOKEN:
+            return challenge, 200
+        else:
+            return "Verification failed", 403
+
+
+# Réception messages WhatsApp
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    data = request.json
+
+    try:
+        message = data["entry"][0]["changes"][0]["value"]["messages"][0]
+        sender = message["from"]
+        text = message["text"]["body"]
+
+        response = requests.get(f"{BASE_URL}/student/{text}")
+
+        if response.status_code == 200:
+            student = response.json()
+            reply = f"🎓 {student['nom']}\nMoyenne Générale: {student.get('moyenne_generale', 'Non disponible')}"
+        else:
+            reply = "❌ Matricule introuvable."
+
+        send_message(sender, reply)
+
+    except Exception as e:
+        print("Erreur:", e)
+
+    return "OK", 200
+
+
+def send_message(to, message):
+    url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
+
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "text": {"body": message}
+    }
+
+    requests.post(url, headers=headers, json=payload)
 
 
 if __name__ == "__main__":
