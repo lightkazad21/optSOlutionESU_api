@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 import json
 import requests
+import os
 
 app = Flask(__name__)
 
@@ -29,9 +30,13 @@ def get_student(matricule):
 VERIFY_TOKEN = "opt_solution_verify"
 WHATSAPP_TOKEN = "EAAJZBhRyiMNsBQz2z2mRwv4ZCW4dsBc8JX1g284lX6EqX9UGZCUFS3ZC4pX8PyRr0ZA0qrO0gj8s3ZB1v0pryA3LpU8mQVIQjZBpubrtpXuEc108hoTuSJEiVoiwYiRe5pvEgyKrYU0Oo8qXUKNHh5QRmbB52DEbgcYv4CGRZAGACFg1GirPq0Kd0E6PUjatRd5ZADvpB4peE713IECcHZAJLh6wHFSe7qEtwxChGAsyRfEjTFYyZCMXMW0rAZDZD"
 PHONE_NUMBER_ID = "1022115244319708"
-BASE_URL = "https://https://optsolutionesu-api.onrender.com"
+BASE_URL = "https://optsolutionesu-api.onrender.com"  # ✅ corrigé
 
-# Vérification webhook
+# ==============================
+# WEBHOOK WHATSAPP
+# ==============================
+
+# Vérification du webhook (GET)
 @app.route("/webhook", methods=["GET"])
 def verify():
     mode = request.args.get("hub.mode")
@@ -43,12 +48,13 @@ def verify():
             return challenge, 200
         else:
             return "Verification failed", 403
+    return "Missing parameters", 400
 
-
-# Réception messages WhatsApp
+# Réception messages WhatsApp (POST)
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.json
+    print("Webhook received:", data)  # 🔥 utile pour debug
 
     try:
         message = data["entry"][0]["changes"][0]["value"]["messages"][0]
@@ -70,7 +76,7 @@ def webhook():
 
     return "OK", 200
 
-
+# Envoi message WhatsApp
 def send_message(to, message):
     url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
 
@@ -85,8 +91,16 @@ def send_message(to, message):
         "text": {"body": message}
     }
 
-    requests.post(url, headers=headers, json=payload)
+    try:
+        r = requests.post(url, headers=headers, json=payload)
+        print("Message sent status:", r.status_code)
+    except Exception as e:
+        print("Erreur en envoyant le message:", e)
 
+# ==============================
+# LANCEMENT SERVEUR
+# ==============================
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
